@@ -37,6 +37,21 @@ function cleanExpiredTokens(data) {
   };
 }
 
+// --------- EKLENDİ: fetchAccounts ---------
+async function fetchAccounts() {
+  try {
+    const response = await fetch(ACCOUNTS_URL);
+    if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+    const text = await response.text();
+    return text.split('\n').map(line => line.trim()).filter(line => line);
+  } catch (error) {
+    console.error('Error fetching accounts:', error);
+    return [];
+  }
+}
+
+// ---------------------- Token kayıt API ----------------------
+
 app.post('/save-token', (req, res) => {
   const { jwt } = req.body;
   if (!jwt) return res.status(400).json({ error: 'JWT missing' });
@@ -144,9 +159,7 @@ app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
 
-// ──────────────────────────────
-// TOKEN ÇEKME VE GÖNDERME DÖNGÜSÜ
-// ──────────────────────────────
+// ------------------- Token çekme ve gönderme döngüsü -------------------
 
 async function login(username, password, countryCode) {
   try {
