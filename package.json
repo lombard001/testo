@@ -1,7 +1,7 @@
 {
   "name": "msp2-token-collector",
   "version": "1.0.0",
-  "type": "commonjs",
+  "type": "module",
   "main": "index.js",
   "dependencies": {
     "node-fetch": "^3.3.1"
