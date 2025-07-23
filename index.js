@@ -2,10 +2,10 @@ const fetch = require('node-fetch');
 
 const ACCOUNTS_URL = 'https://raw.githubusercontent.com/palacejs/deneme/refs/heads/main/ws2.txt';
 const TOKEN_POST_URL = 'https://msp2lol.onrender.com/save-token';
-const LOGIN_URL = 'https://msp2.pages.dev/api/tool-login?q=eu';
+const LOGIN_URL = "https://msp2.pages.dev/api/tool-login?q=eu";
 
 const MAX_PARALLEL = 2;
-const DELAY_BETWEEN_BATCHES = 5000;
+const DELAY_BETWEEN_BATCHES = 5000; // 5 saniye
 
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -13,11 +13,12 @@ function delay(ms) {
 
 async function fetchAccounts() {
   try {
-    const response = await fetch(ACCOUNTS_URL);
-    const text = await response.text();
-    return text.split('\n').map(line => line.trim()).filter(Boolean);
-  } catch (err) {
-    console.error("❌ Error fetching accounts:", err.message);
+    const res = await fetch(ACCOUNTS_URL);
+    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+    const text = await res.text();
+    return text.split('\n').map(l => l.trim()).filter(Boolean);
+  } catch (e) {
+    console.error('❌ Error fetching accounts:', e.message);
     return [];
   }
 }
@@ -30,7 +31,7 @@ async function login(username, password, countryCode) {
       grant_type: 'password',
       scope: 'openid nebula offline_access',
       username: `${countryCode}|${username}`,
-      password: password,
+      password,
       acr_values: 'gameId:j68d'
     });
 
@@ -39,44 +40,32 @@ async function login(username, password, countryCode) {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: params
     });
-
     const loginData = await loginRes.json();
-    if (!loginData.access_token) throw new Error(loginData.error || 'Login failed');
 
-    const [, payload] = loginData.access_token.split('.');
-    const decoded = JSON.parse(Buffer.from(payload, 'base64').toString());
-    const sub = decoded.sub;
+    if (loginData.error) throw new Error(`Login failed: ${loginData.error}`);
 
-    // countryCode filtresini kaldırıp deneyebilirsin:
-const profilesResponse = await fetch(`https://eu.mspapis.com/profileidentity/v1/logins/${sub}/profiles`, {
-  headers: { 'Authorization': `Bearer ${access_token}` }
-});
+    const { access_token, refresh_token } = loginData;
+    if (!access_token) throw new Error('No access token received');
 
+    const [, payloadB64] = access_token.split('.');
+    const payload = JSON.parse(Buffer.from(payloadB64, 'base64').toString());
+    const sub = payload.sub;
+    if (!sub) throw new Error('Invalid token payload');
 
-    if (!profileRes.ok) {
-      console.error(`❌ Profile fetch error: HTTP ${profileRes.status} for user ${username}`);
-      return null;
-    }
+    const profilesRes = await fetch(`https://eu.mspapis.com/profileidentity/v1/logins/${sub}/profiles?filter=region:${countryCode}`, {
+      headers: { Authorization: `Bearer ${access_token}` }
+    });
 
-    let profiles = [];
-    try {
-      const text = await profileRes.text();
-      profiles = JSON.parse(text);
-    } catch (err) {
-      console.error(`⚠️ profiles response is not JSON for user ${username}:`, err.message);
-      console.error('🔍 Response content:', await profileRes.text());
-      return null;
-    }
+    if (!profilesRes.ok) throw new Error(`Profiles fetch failed: ${profilesRes.status}`);
 
-    if (!profiles.length) {
-      console.error(`❌ No profiles found for user ${username}`);
-      return null;
-    }
+    const profiles = await profilesRes.json();
+    if (!profiles.length) throw new Error('No profiles found');
 
     const profileId = profiles[0].id;
+
     const refreshParams = new URLSearchParams({
       grant_type: 'refresh_token',
-      refresh_token: loginData.refresh_token,
+      refresh_token,
       acr_values: `gameId:j68d profileId:${profileId}`
     });
 
@@ -90,35 +79,35 @@ const profilesResponse = await fetch(`https://eu.mspapis.com/profileidentity/v1/
     });
 
     const finalData = await finalRes.json();
-    return finalData.access_token || null;
-
-  } catch (err) {
-    console.error(`❌ Login failed for ${username}: ${err.message}`);
+    if (finalData.error) throw new Error('Token refresh failed');
+    return finalData.access_token;
+  } catch (e) {
+    console.error(`❌ Login error for ${username}: ${e.message}`);
     return null;
   }
 }
 
 async function sendToken(token) {
   try {
-    await fetch(TOKEN_POST_URL, {
+    const res = await fetch(TOKEN_POST_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ jwt: token })
     });
-    console.log("✅ Token sent successfully");
-  } catch (err) {
-    console.error("❌ Error sending token:", err.message);
+    if (!res.ok) throw new Error(`Failed to send token: ${res.statusText}`);
+    console.log('✅ Token sent successfully');
+  } catch (e) {
+    console.error('❌ Token submission error:', e.message);
   }
 }
 
-async function processAccount(line, index) {
+async function processAccount(line, idx) {
   const [username, password, countryCode] = line.split(':');
   if (!username || !password || !countryCode) {
-    console.error(`⚠️ Invalid account format at line ${index + 1}`);
+    console.error(`⚠️ Invalid account format at line ${idx + 1}`);
     return;
   }
-
-  console.log(`🔐 [${index + 1}] Logging in: ${username}`);
+  console.log(`🔐 [${idx + 1}] Logging in: ${username}`);
   const token = await login(username, password, countryCode);
   if (token) await sendToken(token);
 }
@@ -129,22 +118,27 @@ async function run() {
     console.error('⚠️ No accounts found');
     return;
   }
+  console.log(`🚀 Total accounts: ${accounts.length}`);
 
   for (let i = 0; i < accounts.length; i += MAX_PARALLEL) {
     const batch = accounts.slice(i, i + MAX_PARALLEL);
+    const batchNumber = Math.floor(i / MAX_PARALLEL) + 1;
+
+    console.log(`⚙️ Starting batch ${batchNumber} with ${batch.length} accounts...`);
     await Promise.all(batch.map((line, idx) => processAccount(line, i + idx)));
+
+    console.log(`✅ Batch ${batchNumber} done. Waiting ${DELAY_BETWEEN_BATCHES / 1000}s...`);
     if (i + MAX_PARALLEL < accounts.length) await delay(DELAY_BETWEEN_BATCHES);
   }
 
-  console.log("🏁 All accounts processed.");
+  console.log('🏁 All accounts processed.');
 }
 
-// Döngü ile sürekli 4 saatte bir çalıştırma örneği:
 async function loop() {
   while (true) {
-    console.log("🚀 Yeni çalışma başlıyor...");
+    console.log('🔄 Starting new run...');
     await run();
-    console.log("⏱ 4 saat bekleniyor...");
+    console.log('⏳ Waiting 4 hours...');
     await delay(4 * 60 * 60 * 1000);
   }
 }
