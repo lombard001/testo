@@ -1,11 +1,9 @@
 {
-  "name": "msp2-runner",
+  "name": "msp2-token-collector",
   "version": "1.0.0",
+  "type": "commonjs",
   "main": "index.js",
-  "scripts": {
-    "start": "node index.js"
-  },
   "dependencies": {
-    "node-fetch": "^2.6.1"
+    "node-fetch": "^3.3.1"
   }
 }
