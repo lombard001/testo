@@ -47,10 +47,11 @@ async function login(username, password, countryCode) {
     const decoded = JSON.parse(Buffer.from(payload, 'base64').toString());
     const sub = decoded.sub;
 
-    // Profile fetch
-    const profileRes = await fetch(`https://eu.mspapis.com/profileidentity/v1/logins/${sub}/profiles?filter=region:${countryCode}`, {
-      headers: { Authorization: `Bearer ${loginData.access_token}` }
-    });
+    // countryCode filtresini kaldırıp deneyebilirsin:
+const profilesResponse = await fetch(`https://eu.mspapis.com/profileidentity/v1/logins/${sub}/profiles`, {
+  headers: { 'Authorization': `Bearer ${access_token}` }
+});
+
 
     if (!profileRes.ok) {
       console.error(`❌ Profile fetch error: HTTP ${profileRes.status} for user ${username}`);
